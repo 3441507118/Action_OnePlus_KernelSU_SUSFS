@@ -128,7 +128,7 @@ jobs:
         run: |
           set -e
           mkdir -p kernel_workspace
-          curl --retry 3 -LSs "https://raw.githubusercontent.com/OnePlusOSS/kernel_manifest/refs/heads/oneplus/${{ github.event.inputs.CPU }}/${{ github.event.inputs.FEIL }}.xml" \
+          curl --retry 3 -LSs "https://raw.bgithub.xyz/OnePlusOSS/kernel_manifest/refs/heads/oneplus/${{ github.event.inputs.CPU }}/${{ github.event.inputs.FEIL }}.xml" \
             -o kernel_workspace/${{ github.event.inputs.FEIL }}.xml
           echo "hash=$(sha256sum kernel_workspace/${{ github.event.inputs.FEIL }}.xml | awk '{print $1}')" >> $GITHUB_OUTPUT
   
@@ -175,7 +175,8 @@ jobs:
         run: |
           set -e
           cd kernel_workspace/kernel_platform
-          curl --retry 3 -LSs "https://raw.githubusercontent.com/ShirkNeko/SukiSU-Ultra/main/kernel/setup.sh" | bash -s susfs-dev
+          curl --retry 3 -LSs "https://raw.bgithub.xyz/SukiSU-Ultra/SukiSU-Ultra/main/kernel/setup.sh" | bash -s susfs-main
+          //curl --retry 3 -LSs "https://raw.bgithub.xyz/ShirkNeko/SukiSU-Ultra/main/kernel/setup.sh" | bash -s susfs-dev
           cd KernelSU
           KSU_VERSION=$(expr $(/usr/bin/git rev-list --count main) "+" 10606)
           echo "KSUVER=$KSU_VERSION" >> $GITHUB_ENV
@@ -188,8 +189,8 @@ jobs:
           git clone --depth=1 https://gitlab.com/simonpunk/susfs4ksu.git \
             -b gki-${{ github.event.inputs.ANDROID_VERSION }}-${{ github.event.inputs.KERNEL_VERSION }}
           git clone --depth=1 https://github.com/SukiSU-Ultra/SukiSU_patch.git
-          wget --retry-connrefused --waitretry=1 --read-timeout=20 --timeout=15 -t 3 https://raw.githubusercontent.com/FurLC/Action_OnePlus_KernelSU_SUSFS/main/ogki2gki.patch
-          wget --retry-connrefused --waitretry=1 --read-timeout=20 --timeout=15 -t 3 https://raw.githubusercontent.com/FurLC/Action_OnePlus_KernelSU_SUSFS/main/ogki2gki_c99fix.patch
+          wget --retry-connrefused --waitretry=1 --read-timeout=20 --timeout=15 -t 3 https://raw.bgithub.xyz/FurLC/Action_OnePlus_KernelSU_SUSFS/main/ogki2gki.patch
+          wget --retry-connrefused --waitretry=1 --read-timeout=20 --timeout=15 -t 3 https://raw.bgithub.xyz/FurLC/Action_OnePlus_KernelSU_SUSFS/main/ogki2gki_c99fix.patch
           cd kernel_platform
           PATCHDIR="../susfs4ksu/kernel_patches"
           SUKIPATCH="../SukiSU_patch"
