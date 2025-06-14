@@ -112,17 +112,15 @@ jobs:
           remove-haskell: 'true'
           remove-codeql: 'true'
 
-  
       - name: 安装编译依赖
         run: |
           set -e
           sudo apt update
           sudo apt install -y python3 git curl ccache unzip libelf-dev lld llvm clang llvm-dev
-   
+
       - name: 检出仓库
         uses: actions/checkout@v4
 
-   
       - name: 下载manifest并生成ccache哈希
         id: manifest_hash
         run: |
@@ -131,7 +129,7 @@ jobs:
           curl --retry 3 -LSs "https://raw.githubusercontent.com/OnePlusOSS/kernel_manifest/refs/heads/oneplus/${{ github.event.inputs.CPU }}/${{ github.event.inputs.FEIL }}.xml" \
             -o kernel_workspace/${{ github.event.inputs.FEIL }}.xml
           echo "hash=$(sha256sum kernel_workspace/${{ github.event.inputs.FEIL }}.xml | awk '{print $1}')" >> $GITHUB_OUTPUT
-  
+
       - name: 恢复ccache缓存
         uses: actions/cache@v3
         with:
@@ -139,20 +137,20 @@ jobs:
           key: ccache-${{ runner.os }}-${{ github.event.inputs.CPU }}-${{ github.event.inputs.FEIL }}-${{ github.event.inputs.KERNEL_VERSION }}-${{ steps.manifest_hash.outputs.hash }}
           restore-keys: |
             ccache-${{ runner.os }}-${{ github.event.inputs.CPU }}-
-   
+
       - name: 配置Git信息
         run: |
           set -e
           git config --global user.name "FurLC"
           git config --global user.email "qq441791056@163.com"
-  
+
       - name: 安装repo工具
         run: |
           set -e
           curl --retry 3 https://storage.googleapis.com/git-repo-downloads/repo > ~/repo
           chmod a+x ~/repo
           sudo mv ~/repo /usr/local/bin/repo
-  
+
       - name: 初始化repo并同步源码
         run: |
           set -e
@@ -170,18 +168,17 @@ jobs:
             sed -i '$i res=$(echo "$res" | sed '\''s/-dirty//g'\'')' "$script"
             sed -i '$s|echo "\$res"|echo "${{ github.event.inputs.KERNEL_NAME }}"|' "$script"
           done
-  
+
       - name: 注入KernelSU-SukiSU Ultra
         run: |
           set -e
           cd kernel_workspace/kernel_platform
-          //curl --retry 3 -LSs "https://raw.githubusercontent.com/ShirkNeko/SukiSU-Ultra/main/kernel/setup.sh" | bash -s susfs-dev
           curl --retry 3 -LSs "https://raw.github.com/SukiSU-Ultra/SukiSU-Ultra/main/kernel/setup.sh" | bash -s susfs-main
           cd KernelSU
           KSU_VERSION=$(expr $(/usr/bin/git rev-list --count main) "+" 10606)
           echo "KSUVER=$KSU_VERSION" >> $GITHUB_ENV
           sed -i "s/DKSU_VERSION=12800/DKSU_VERSION=${KSU_VERSION}/" kernel/Makefile
-  
+
       - name: 设置susfs并应用主补丁
         run: |
           set -e
@@ -218,13 +215,13 @@ jobs:
           patch -p1 -F 3 < syscall_hooks.patch || true
           patch -p1 -F 3 < ogki2gki_c99fix.patch
           echo "✅ SUSFS 和 syscall_hooks patch 应用完成"
- 
+
       - name: 应用zram相关补丁
         run: |
           set -e
           cd kernel_workspace/kernel_platform/common
+          # 仅保留lz4k_oplus补丁，移除其他算法
           PATCH_LIST=(
-            "lz4kd"
             "lz4k_oplus"
           )
           PATCH_BASE=../../SukiSU_patch/other/zram/zram_patch/${{ github.event.inputs.KERNEL_VERSION }}
@@ -232,14 +229,14 @@ jobs:
             PATCH_FILE="$PATCH_BASE/$PATCH_NAME.patch"
             LOCAL_PATCH="./$PATCH_NAME.patch"
             if [[ -f "$PATCH_FILE" ]]; then
-              echo "🟢 应用补丁: $PATCH_NAME"
+              echo "🟢 应用补丁: $PATCH_NAME (仅保留lz4k_oplus算法)"
               cp "$PATCH_FILE" "$LOCAL_PATCH"
               patch -p1 -F 3 < "$LOCAL_PATCH" || echo "⚠️ $PATCH_NAME patch失败(已应用/冲突可忽略)"
             else
               echo "❗ 未找到$PATCH_NAME补丁 (kernel version ${{ github.event.inputs.KERNEL_VERSION }})"
             fi
           done
- 
+
       - name: 写入SUSFS与ZRAM内核配置及性能优化
         run: |
           set -e
@@ -268,18 +265,13 @@ jobs:
           echo "CONFIG_KSU_SUSFS_SPOOF_CMDLINE_OR_BOOTCONFIG=y"      >> "$DEFCONFIG"  # 伪装cmdline/bootconfig
           echo "CONFIG_KSU_SUSFS_OPEN_REDIRECT=y"                    >> "$DEFCONFIG"  # 打开重定向支持
          
-          # 如果启用ZRAM，写入ZRAM相关配置
+          # 如果启用ZRAM，写入ZRAM相关配置（仅保留lz4k_oplus）
           if [[ "${{ github.event.inputs.ZRAM }}" == "true" ]]; then
-            # 启用ZRAM及主流压缩算法支持"
-            if [[ "${{ github.event.inputs.KERNEL_VERSION }}" == "5.10" || "${{ github.event.inputs.KERNEL_VERSION }}" == "5.15" ]]; then
-              echo "CONFIG_ZSMALLOC=y   # 启用ZRAM专用内存分配器" >> "$DEFCONFIG"
-              echo "CONFIG_CRYPTO_LZ4HC=y   # LZ4高压缩比算法"    >> "$DEFCONFIG"
-              echo "CONFIG_CRYPTO_LZ4K=y    # LZ4K压缩算法"       >> "$DEFCONFIG"
-              echo "CONFIG_CRYPTO_842=y     # 842硬件压缩算法"    >> "$DEFCONFIG"
-            fi
-            echo "CONFIG_CRYPTO_LZ4KD=y   # LZ4KD压缩算法"      >> "$DEFCONFIG"
-            echo "CONFIG_CRYPTO_LZ4K_OPLUS=y   # OPLUS定制LZ4K" >> "$DEFCONFIG"
-            echo "CONFIG_ZRAM_WRITEBACK=y   # 启用ZRAM写回支持" >> "$DEFCONFIG"
+            echo "# ZRAM配置（仅保留lz4k_oplus算法）" >> "$DEFCONFIG"
+            # 移除ZSMALLOC、lz4hc、842等无关配置
+            # 仅保留lz4k_oplus核心配置
+            echo "CONFIG_CRYPTO_LZ4K_OPLUS=y   # OPLUS定制LZ4K压缩算法" >> "$DEFCONFIG"
+            echo "CONFIG_ZRAM_WRITEBACK=y      # 启用ZRAM写回支持"      >> "$DEFCONFIG"
           fi
           
           # 删除check_defconfig
@@ -294,7 +286,7 @@ jobs:
           cp -r sched_ext/* common/kernel/sched
           rm -rf sched_ext/.git
           cd common/kernel/sched
-  
+
       - name: 编译内核
         run: |
           set -e
@@ -311,7 +303,7 @@ jobs:
             cd $GITHUB_WORKSPACE/kernel_workspace
             LTO=thin ./kernel_platform/oplus/build/oplus_build_kernel.sh ${{ github.event.inputs.CPUD }} ${{ github.event.inputs.BUILD_METHOD }}
           fi
-  
+
       - name: 制作AnyKernel3内核刷机包
         run: |
           set -e
@@ -343,7 +335,7 @@ jobs:
             echo "未找到 Image 文件，构建可能失败"
             exit 1
           fi
- 
+
       - name: Remove _uv suffix from FEIL
         id: feil_clean
         run: |
@@ -352,7 +344,7 @@ jobs:
           clean_feil="${clean_feil%_v}"  # 去掉结尾的 _v（如果有）
           clean_feil="${clean_feil%_u}"  # 去掉结尾的 _u（如果有）
           echo "value=$clean_feil" >> $GITHUB_OUTPUT
-  
+
       - name: 上传AnyKernel3 (No_KPM)
         uses: actions/upload-artifact@v4
         with:
@@ -372,6 +364,7 @@ jobs:
           mv oImage Image
           cp Image $GITHUB_WORKSPACE/AnyKernel3-kpm/Image
           cp Image $GITHUB_WORKSPACE/kernel_workspace/kernel
+
       - name: 上传AnyKernel3 (KPM)
         uses: actions/upload-artifact@v4
         with:
@@ -383,40 +376,41 @@ jobs:
         run: |
           set -e
           sudo apt install -y unzip
-          curl -s https://api.github.com/repos/FurLC/ZRAM-Module/releases/latest | \
-            grep "browser_download_url" | grep "ZRAM-Module-.*\.zip" | cut -d '"' -f 4 | xargs wget -N
-          unzip "$(ls -t ZRAM-Module-*.zip | head -1)" -d ZRAM-Module
-          zram1="./kernel_workspace/kernel_platform/out/msm-kernel-${{ github.event.inputs.CPUD }}-gki/dist/"
-          zram2="./kernel_workspace/kernel_platform/out/dist/"
-          zram3="./kernel_workspace/kernel_platform/out/vendor/oplus/kernel/mm/"
-          zram4="./kernel_workspace/device/qcom/${{ github.event.inputs.CPUD }}-kernel/vendor_dlkm/"
-          zram5="./kernel_workspace/device/qcom/${{ github.event.inputs.CPUD }}-kernel/system_dlkm/flatten/lib/modules/"
-          zram6="./kernel_workspace/kernel_platform/out/msm-kernel-${{ github.event.inputs.CPUD }}-gki/msm-kernel/mm/oplus_mm/hybridswap_zram/"
-          zram7="./kernel_workspace/kernel_platform/out/msm-kernel-${{ github.event.inputs.CPUD }}-gki/msm-kernel/mm/oplus_bsp_hybridswap_zram/"
-          target="./ZRAM-Module/zram/zram.ko"
-          for dir in "$zram1" "$zram2" "$zram3" "$zram4" "$zram5" "$zram6" "$zram7"; do
-            zram_path=$(find "$dir" -name "zram.ko" | head -n 1)
-            [ -n "$zram_path" ] && break
-          done
-          if [ -z "$zram_path" ]; then
-            zram_path=$(find "./kernel_workspace" -name "zram.ko" | head -n 1)
-          fi
+          # 移除旧版ZRAM-Module下载逻辑，直接处理内核编译生成的模块
+          zram_target="./ZRAM-Module/zram"
+          mkdir -p "$zram_target"
+          
+          # 仅保留lz4k_oplus相关模块文件
+          zram_path=$(find kernel_workspace -name "zram.ko" | head -n 1)
+          lz4k_oplus_path=$(find kernel_workspace -name "lz4k_oplus.ko" | head -n 1)
+          
           if [ -n "$zram_path" ] && [ -f "$zram_path" ]; then
-            echo "ZRAM module file located at: $zram_path"
-            mkdir -p "$(dirname "$target")"
-            if [ "$(realpath "$zram_path")" != "$(realpath "$target")" ]; then
-              cp "$zram_path" "$target"
-            else
-              echo "源文件与目标相同，跳过复制"
-            fi
+            echo "🟢 找到ZRAM模块: $zram_path"
+            cp "$zram_path" "$zram_target/zram.ko"
           else
-            echo "未找到 zram.ko 文件，构建可能失败"
-            exit 1
+            echo "❗ 未找到zram.ko，ZRAM功能可能受限"
           fi
- 
+          
+          if [ -n "$lz4k_oplus_path" ] && [ -f "$lz4k_oplus_path" ]; then
+            echo "🟢 找到lz4k_oplus模块: $lz4k_oplus_path"
+            cp "$lz4k_oplus_path" "$zram_target/lz4k_oplus.ko"
+          else
+            echo "❗ 未找到lz4k_oplus.ko，仅保留lz4k_oplus算法可能失败"
+          fi
+          
+          # 移除其他算法模块（示例：若存在则删除）
+          rm -f "$zram_target"/*.ko || true
+          if [ -f "$zram_target/zram.ko" ] && [ -f "$zram_target/lz4k_oplus.ko" ]; then
+            echo "✅ 仅保留lz4k_oplus算法相关模块"
+          else
+            echo "⚠️ 模块文件不完整，ZRAM功能可能无法正常工作"
+          fi
+
       - name: 上传ZRAM-Module
         uses: actions/upload-artifact@v4
         if: ${{ github.event.inputs.ZRAM == 'true' }}
         with:
           name: ZRAM-Module_${{ github.event.inputs.KERNEL_VERSION }}_${{ steps.feil_clean.outputs.value }}
-          path: ZRAM-Module/*
+          path: |
+            ZRAM-Module/zram/zram.ko
+            ZRAM-Module/zram/lz4k_oplus.ko    
